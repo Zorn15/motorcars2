@@ -151,6 +151,177 @@ docker run -p 8080:8080 -e DATABASE_URL=postgresql://... motorscars
 
 ---
 
+## Despliegue en Google Cloud Run
+
+Guía de despliegue manual en GCP (Cloud Run + Cloud SQL PostgreSQL) desde Cloud Shell.
+
+### 1. Crear la instancia de Cloud SQL
+```bash
+gcloud sql instances create motorscars-db \
+  --database-version=POSTGRES_15 \
+  --tier=db-f1-micro \
+  --region=us-central1
+
+gcloud sql databases create motorscars_db --instance=motorscars-db
+
+gcloud sql users create motorscars_user \
+  --instance=motorscars-db \
+  --password='TU_PASSWORD_SEGURO'
+```
+
+### 2. Variables y APIs
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+CONNECTION_NAME=$(gcloud sql instances describe motorscars-db --format='value(connectionName)')
+REGION="us-central1"
+
+gcloud services enable \
+  run.googleapis.com \
+  sqladmin.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  storage.googleapis.com
+```
+
+### 3. Artifact Registry y permisos
+```bash
+gcloud artifacts repositories create motorscars \
+  --repository-format=docker \
+  --location=$REGION
+
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+for ROLE in \
+  roles/cloudbuild.builds.builder \
+  roles/storage.admin \
+  roles/artifactregistry.writer \
+  roles/logging.logWriter \
+  roles/cloudsql.client; do
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${COMPUTE_SA}" \
+    --role="$ROLE"
+done
+```
+
+### 4. Construir la imagen con Cloud Build
+```bash
+cd ~/motorcars2
+gcloud builds submit --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/motorscars/motorscars
+```
+
+### 5. Desplegar en Cloud Run
+```bash
+gcloud run deploy motorscars \
+  --image ${REGION}-docker.pkg.dev/${PROJECT_ID}/motorscars/motorscars:latest \
+  --region ${REGION} \
+  --allow-unauthenticated \
+  --memory 512Mi \
+  --add-cloudsql-instances=${CONNECTION_NAME} \
+  --set-env-vars="DATABASE_URL=postgresql://motorscars_user:TU_PASSWORD@/motorscars_db?host=/cloudsql/${CONNECTION_NAME}"
+```
+
+### 6. Cargar schema, seed y vistas
+```bash
+cd ~/motorcars2/database
+gcloud sql connect motorscars-db --user=motorscars_user --database=motorscars_db
+```
+Dentro del prompt `psql`:
+```sql
+\i schema.sql
+\i seed.sql
+\i views.sql
+\q
+```
+
+### 7. Obtener la URL pública
+```bash
+gcloud run services describe motorscars --region us-central1 --format='value(status.url)'
+```
+
+---
+
+## CI/CD con GitHub Actions
+
+Automatización del despliegue: cada `git push` a `main` construye la imagen y actualiza Cloud Run.
+
+### 1. Crear Service Account para GitHub Actions
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+SA_NAME="github-actions-deployer"
+SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud iam service-accounts create $SA_NAME \
+  --display-name="GitHub Actions Deployer"
+
+for ROLE in \
+  roles/run.admin \
+  roles/cloudbuild.builds.editor \
+  roles/artifactregistry.writer \
+  roles/storage.admin \
+  roles/cloudsql.client \
+  roles/iam.serviceAccountUser; do
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="$ROLE"
+done
+```
+
+### 2. Configurar Workload Identity Federation
+```bash
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+POOL_ID="github-pool"
+PROVIDER_ID="github-provider"
+GITHUB_REPO="USUARIO/motorcars2"
+GITHUB_OWNER="USUARIO"
+
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com
+
+gcloud iam workload-identity-pools create $POOL_ID \
+  --location="global" \
+  --display-name="GitHub Actions Pool"
+
+gcloud iam workload-identity-pools providers create-oidc $PROVIDER_ID \
+  --location="global" \
+  --workload-identity-pool=$POOL_ID \
+  --display-name="GitHub Provider" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
+  --attribute-condition="assertion.repository_owner == '${GITHUB_OWNER}'" \
+  --issuer-uri="https://token.actions.githubusercontent.com"
+
+gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository/${GITHUB_REPO}"
+```
+
+### 3. Secrets en GitHub (Settings → Secrets and variables → Actions)
+
+| Nombre | Valor |
+|---|---|
+| `GCP_PROJECT_ID` | ID del proyecto de GCP |
+| `GCP_WIF_PROVIDER` | `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `GCP_SA_EMAIL` | `github-actions-deployer@PROJECT_ID.iam.gserviceaccount.com` |
+| `DATABASE_URL` | URL completa de conexión a Cloud SQL vía socket |
+| `CLOUDSQL_CONNECTION_NAME` | `PROJECT_ID:REGION:motorscars-db` |
+
+### 4. Workflow `.github/workflows/deploy.yml`
+
+El workflow ejecuta automáticamente en cada push a `main`:
+1. Checkout del código
+2. Autenticación a GCP vía WIF
+3. Build de la imagen Docker
+4. Push a Artifact Registry
+5. Deploy a Cloud Run con la conexión a Cloud SQL
+
+### 5. Flujo de trabajo diario
+```bash
+git add .
+git commit -m "descripción del cambio"
+git push origin main
+```
+GitHub Actions detecta el push, construye, sube y despliega automáticamente (~3–5 min).
+---
+
 ## Endpoints de la API
 
 | Método | Ruta | Descripción |
