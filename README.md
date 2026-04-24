@@ -79,15 +79,109 @@ La plataforma gestiona marcas (Brand), vehículos (Car) e imágenes (CarImage), 
 
 ---
 
-## Métricas del Proyecto
+## Métricas y Reportes
 
-| Métrica | Valor |
-|---------|-------|
-| **Velocity promedio** | 37 puntos por sprint |
-| **Historias completadas** | 18 / 18 |
-| **Total de puntos** | 110 puntos |
-| **Bugs encontrados** | - |
-| **Tiempo promedio de resolución** | - |
+Métricas obtenidas a partir de **GitHub Insights** (Pulse, Contributors, Code Frequency) y del **Burn-up chart** del Project Board (`MotorCars Board → Insights`). Periodo medido: **11 abr 2026 — 23 abr 2026**.
+
+### Resumen ejecutivo
+
+| Métrica | Valor | Fuente |
+|---------|-------|--------|
+| **Velocity promedio** | 36.6 puntos / sprint | Suma de puntos por sprint |
+| **Velocity por sprint** | 33 / 33 / 44 | Tablas de sprints |
+| **Throughput** | 6 historias / sprint | 18 historias / 3 sprints |
+| **Historias completadas** | 18 / 18 (100%) | GitHub Issues cerrados |
+| **Total de puntos entregados** | 110 puntos | Suma de los 3 sprints |
+| **Pull Requests fusionados** | 6 (0 abiertos) | Insights → Pulse |
+| **Contribuidores activos** | 3 autores | Insights → Contributors |
+| **Commits a `main`** | 12 (17 en todas las ramas) | Insights → Pulse |
+| **Cambio de código** | +2150 / −1 líneas (33 archivos) | Insights → Code frequency |
+| **Bugs en producción** | 0 | QA manual + Swagger |
+
+### 1. Velocity (puntos completados por sprint)
+
+| Sprint | Puntos planificados | Puntos completados | % cumplimiento |
+|--------|---------------------|--------------------|----------------|
+| Sprint 1 — Base de Datos | 33 | 33 | 100% |
+| Sprint 2 — Backend API | 33 | 33 | 100% |
+| Sprint 3 — Frontend, Despliegue y QA | 44 | 44 | 100% |
+| **Promedio** | **36.6** | **36.6** | **100%** |
+
+> Observación: la velocity creció en el Sprint 3 (+33%) porque el equipo ya estaba alineado con la herramienta de despliegue y la API estaba estable.
+
+### 2. Burn-up Chart (trabajo completado vs total)
+
+Tomado del Project `MotorCars Board → Insights → Burn up` (rango: 2 semanas, `is:issue`).
+
+| Fecha | Issues completados | Issues totales |
+|-------|---------------------|----------------|
+| 16 abr | 4 | 18 |
+| 18 abr | 6 | 18 |
+| 21 abr | 14 | 18 |
+| 23 abr | **18** | 18 |
+
+Línea verde (completed) alcanza la línea morada (open) el 23 de abril → **scope cerrado al 100%**.
+
+> Equivalente al burndown: el trabajo restante pasó de 18 → 0 en el periodo.
+
+### 3. Lead Time y Cycle Time
+
+Calculados sobre los 6 PRs fusionados visibles en `Insights → Pulse`.
+
+| Métrica | Definición | Valor promedio |
+|---------|------------|----------------|
+| **Lead Time** | Desde creación del issue hasta cierre del PR asociado | ~2.5 días |
+| **Cycle Time** | Desde primer commit del PR hasta merge a `main` | ~1 día |
+
+PRs de referencia:
+- `#31 Production (despliegue)` — merge el 22 abr
+- `#30 Merge con sprint 3 para despliegue` — merge el 21 abr
+- `#29 Merge con sprint 2` — merge el 21 abr
+- `#22 Revert "Add files via upload"` — merge el 21 abr
+
+### 4. Throughput (historias completadas por periodo)
+
+| Sprint | Historias entregadas |
+|--------|----------------------|
+| Sprint 1 | 6 |
+| Sprint 2 | 6 |
+| Sprint 3 | 6 |
+| **Total** | **18** |
+
+Throughput estable de **6 historias por sprint** durante todo el proyecto.
+
+### 5. Distribución de contribuciones
+
+Datos de `Insights → Contributors` (rango: All).
+
+| Contribuidor | Commits | Adiciones | Eliminaciones |
+|--------------|---------|-----------|---------------|
+| @Zorn15 (Oscar Morales) | 11 | 2,040 | 256 |
+| @OscarLaiton2105 | 2 | 366 | 0 |
+| Otros | — | — | — |
+
+### Dashboard de Métricas (GitHub Insights)
+
+Las gráficas en vivo se consultan desde el repositorio:
+
+| Vista | Ruta | Métrica que muestra |
+|-------|------|---------------------|
+| Pulse | `Insights → Pulse` | PRs, issues, commits y autores del periodo |
+| Contributors | `Insights → Contributors` | Commits por persona en el tiempo |
+| Code frequency | `Insights → Code frequency` | Adiciones/eliminaciones por semana |
+| Burn up chart | `Projects → MotorCars Board → Insights → Burn up` | Progreso de issues vs total |
+| Status chart | `Projects → MotorCars Board → Insights → Status chart` | Issues por estado (Todo/In progress/Done) |
+
+Las capturas de evidencia se almacenan en [`docs/metrics/`](docs/metrics/).
+
+### Lecciones Aprendidas
+
+- **Eager loading es crítico:** sin `joinedload()` en SQLAlchemy las consultas generaban el problema N+1, afectando gravemente el rendimiento del listado de vehículos.
+- **TEXT vs VARCHAR para imágenes:** usar `TEXT` en lugar de `VARCHAR(500)` fue necesario para soportar imágenes codificadas en base64.
+- **Separación de responsabilidades:** dividir el trabajo por roles (DB, Backend, Frontend/QA) permitió trabajar en paralelo sin bloqueos entre sprints.
+- **CORS desde el inicio:** configurar CORS correctamente desde el Sprint 1 evitó problemas de integración entre frontend y backend en etapas avanzadas.
+- **El burn-up reveló acumulación al final:** la mayor parte del cierre de issues ocurrió entre el 20 y 23 de abril. Para futuros proyectos, distribuir el merge de PRs a lo largo del sprint en vez de concentrarlo al cierre.
+- **Workload Identity Federation > claves JSON:** evitar subir credenciales al repo simplificó la configuración de GitHub Actions y eliminó el riesgo de filtración de secrets.
 
 ---
 
@@ -335,15 +429,6 @@ GitHub Actions detecta el push, construye, sube y despliega automáticamente (~3
 | POST | `/api/cars` | Crear vehículo (hasta 10 imágenes) |
 | PUT | `/api/cars/{id}` | Actualizar vehículo (parcial) |
 | DELETE | `/api/cars/{id}` | Eliminar vehículo |
-
----
-
-## Lecciones Aprendidas
-
-- **Eager loading es crítico:** Sin `joinedload()` en SQLAlchemy las consultas generaban el problema N+1, afectando gravemente el rendimiento del listado de vehículos.
-- **TEXT vs VARCHAR para imágenes:** Usar `TEXT` en lugar de `VARCHAR(500)` fue necesario para soportar imágenes codificadas en base64.
-- **Separación de responsabilidades:** Dividir el trabajo por roles (DB, Backend, Frontend/QA) permitió trabajar en paralelo sin bloqueos entre sprints.
-- **CORS desde el inicio:** Configurar CORS correctamente desde el Sprint 1 evitó problemas de integración entre frontend y backend en etapas avanzadas.
 
 ---
 
